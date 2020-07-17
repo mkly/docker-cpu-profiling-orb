@@ -1,0 +1,33 @@
+parameters:
+  start_delay:
+    description: The delay in seconds until the profiler starts
+    type: integer
+    default: 3
+  sample_length:
+    description: The sample length in seconds
+    type: integer
+    default: 5
+steps:
+  - run:
+      name: Profiling CPU
+      background: true
+      command: |
+        sleep << parameters.start_delay >>
+
+        cpu_shares=$(cat /sys/fs/cgroup/cpu/cpu.shares)
+        cpus=$(echo "$cpu_shares / 1024" | jq -nf /dev/stdin)
+        quota=$(cat /sys/fs/cgroup/cpu/cpu.cfs_quota_us)
+        quota_interval=$(cat /sys/fs/cgroup/cpu/cpu.cfs_period_us)
+        available_per_micro_second=$(echo "$quota / $quota_interval" | jq -nf /dev/stdin)
+
+        sample_1=$(cat /sys/fs/cgroup/cpuacct/cpuacct.usage_user)
+        sleep << parameters.sample_length >>
+        sample_2=$(cat /sys/fs/cgroup/cpuacct/cpuacct.usage_user)
+
+        sample_length=$((<< parameters.sample_length >> * 1000000))
+
+        total_available=$(echo "$available_per_micro_second * $sample_length" | jq -nf /dev/stdin)
+        total_used=$(($sample_2 - $sample_1))
+        percent=$(echo "$total_used / $total_available / $cpus" | jq -nf /dev/stdin)
+
+        echo "CPU: ${percent}%"
